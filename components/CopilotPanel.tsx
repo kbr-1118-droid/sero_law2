@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Loader2, Sparkles, Send, Plus, ArrowRight } from 'lucide-react';
+import { Loader2, Sparkles, Send, Plus, ArrowRight, AlertCircle } from 'lucide-react';
 import { analyzeTasks } from '../services/geminiService';
 import { TaskAI, TaskMeta } from '../types';
 import { normalizeLines } from '../utils/textUtils';
@@ -17,6 +17,7 @@ export const CopilotPanel: React.FC<CopilotPanelProps> = ({ model, existingTasks
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [previewTasks, setPreviewTasks] = useState<TaskAI[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   // Manual Input States
   const [mName, setMName] = useState("");
@@ -26,12 +27,14 @@ export const CopilotPanel: React.FC<CopilotPanelProps> = ({ model, existingTasks
     if (!input.trim()) return;
     setLoading(true);
     setPreviewTasks(null);
+    setError(null);
+    
     try {
       const lines = normalizeLines(input);
       const results = await analyzeTasks(lines, model, existingTasks);
       setPreviewTasks(results);
-    } catch (e) {
-      alert("분석 실패: " + e);
+    } catch (e: any) {
+      setError(e.message || "분석 실패");
     } finally {
       setLoading(false);
     }
@@ -42,6 +45,7 @@ export const CopilotPanel: React.FC<CopilotPanelProps> = ({ model, existingTasks
       onAddTasks(previewTasks);
       setPreviewTasks(null);
       setInput("");
+      setError(null);
     }
   };
 
@@ -100,6 +104,13 @@ export const CopilotPanel: React.FC<CopilotPanelProps> = ({ model, existingTasks
                     <span className="opacity-70 text-[10px] block mt-1">예: "홈페이지 시안 검토해야 하는데 업체에서 메일이 안 와."</span>
                 </div>
                 
+                {error && (
+                    <div className="bg-red-50 p-3 rounded-lg text-xs text-red-700 border border-red-200 flex items-start gap-2">
+                        <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                        <span className="whitespace-pre-wrap">{error}</span>
+                    </div>
+                )}
+
                 {loading && (
                     <div className="flex items-center gap-2 text-slate-500 text-sm justify-center py-8">
                         <Loader2 className="w-5 h-5 animate-spin" />

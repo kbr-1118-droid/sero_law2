@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
-import { Save, Upload, Trash2, Settings, FileJson, Cpu } from 'lucide-react';
+import { Save, Upload, Trash2, Settings, FileJson, Cpu, Key } from 'lucide-react';
 import { AppState } from '../types';
+import { removeLocalApiKey } from '../services/geminiService';
 
 interface SidebarProps {
   model: string;
@@ -8,9 +9,10 @@ interface SidebarProps {
   onSave: () => void;
   onLoad: (data: AppState) => void;
   onReset: () => void;
+  onResetKey: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ model, setModel, onSave, onLoad, onReset }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ model, setModel, onSave, onLoad, onReset, onResetKey }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -29,6 +31,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ model, setModel, onSave, onLoa
     reader.readAsText(file);
     // Reset input
     e.target.value = '';
+  };
+
+  const handleClearKey = () => {
+    if(confirm("저장된 API Key를 삭제하시겠습니까?")) {
+        removeLocalApiKey();
+        onResetKey();
+    }
   };
 
   return (
@@ -70,6 +79,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ model, setModel, onSave, onLoa
             <p className="text-[10px] text-slate-400 leading-tight">
               'Flash'는 속도가 빠르고, 'Pro'는 복잡한 맥락 파악에 유리합니다.
             </p>
+            
+            <button 
+                onClick={handleClearKey}
+                className="text-xs text-slate-400 hover:text-red-500 flex items-center gap-1 mt-2 underline"
+            >
+                <Key className="w-3 h-3" /> API Key 재설정
+            </button>
           </div>
         </div>
 

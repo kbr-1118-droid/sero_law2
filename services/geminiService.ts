@@ -62,10 +62,50 @@ const mapRawToDomain = (raw: TaskAIRaw): TaskAI => {
   };
 };
 
+// Safe API Key Retrieval
+export const getApiKey = (): string => {
+  // 1. Try process.env (Node/Webpack/some Vite configs)
+  try {
+    if (typeof process !== 'undefined' && process.env?.API_KEY) {
+      return process.env.API_KEY;
+    }
+  } catch (e) {}
+
+  // 2. Try import.meta.env (Standard Vite)
+  try {
+    // @ts-ignore
+    if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_KEY) {
+       // @ts-ignore
+       return import.meta.env.VITE_API_KEY;
+    }
+  } catch (e) {}
+
+  // 3. Try LocalStorage (User entered)
+  try {
+    const localKey = localStorage.getItem('user_gemini_api_key');
+    if (localKey) return localKey;
+  } catch (e) {}
+
+  return "";
+};
+
+export const hasValidApiKey = (): boolean => {
+    return !!getApiKey();
+};
+
+export const setLocalApiKey = (key: string) => {
+    localStorage.setItem('user_gemini_api_key', key);
+};
+
+export const removeLocalApiKey = () => {
+    localStorage.removeItem('user_gemini_api_key');
+};
+
 export const analyzeTasks = async (lines: string[], modelName: string, existingTasks: TaskAI[] = []): Promise<TaskAI[]> => {
-  const apiKey = process.env.API_KEY;
+  const apiKey = getApiKey();
+  
   if (!apiKey) {
-    throw new Error("API Key is missing in environment variables.");
+    throw new Error("API Key가 없습니다. 설정 메뉴에서 키를 입력해주세요.");
   }
 
   const client = new GoogleGenAI({ apiKey });
@@ -139,12 +179,14 @@ export const analyzeTasks = async (lines: string[], modelName: string, existingT
 
     if (!parsedResponse?.업무상세) {
        console.error("Invalid Response Structure:", parsedResponse);
-       throw new Error("Failed to parse response structure.");
+       throw new Error("AI 응답을 분석할 수 없습니다. 잠시 후 다시 시도해주세요.");
     }
 
     return parsedResponse.업무상세.map(mapRawToDomain);
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini Analysis Error:", error);
-    throw error;
+    // Pass through specific error messages
+    if (error.message.includes("API Key")) throw error;
+    throw new Error("AI 분석 중 오류가 발생했습니다: " + (error.message || "Unknown error"));
   }
 };
