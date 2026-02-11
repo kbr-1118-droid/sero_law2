@@ -4,6 +4,7 @@ import { CheckCircle, Calendar, ArrowRight, Pencil, Save, X, Link as LinkIcon, E
 import { TaskAI, TaskMeta, Channel, TaskLink } from '../types';
 import { Badge } from './ui/Badge';
 import { generateChaseTemplate } from '../utils/scoring';
+import { ResolvePanel } from './ResolvePanel';
 
 interface TaskCardProps {
   task: TaskAI;
@@ -14,9 +15,10 @@ interface TaskCardProps {
   onComplete: (id: string) => void;
   onUpdate: (id: string, updates: { taskName?: string, status?: TaskAI['status'] }, metaUpdates: TaskMeta) => void;
   compact?: boolean;
+  model?: string; // Passed from App -> Dashboard -> TaskCard
 }
 
-export const TaskCard: React.FC<TaskCardProps> = ({ task, meta, score, isStale, allTasks = [], onComplete, onUpdate, compact = false }) => {
+export const TaskCard: React.FC<TaskCardProps> = ({ task, meta, score, isStale, allTasks = [], onComplete, onUpdate, compact = false, model = "gemini-3-flash-preview" }) => {
   const [expanded, setExpanded] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
 
@@ -320,6 +322,11 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, meta, score, isStale, 
                   ))}
               </ul>
           </div>
+          
+          {/* Resolve Copilot Panel */}
+          {!compact && (
+            <ResolvePanel task={task} model={model} />
+          )}
 
           {(meta?.dependsOn || meta?.note) && (
              <div className="bg-white p-2.5 rounded border border-slate-200 text-xs text-slate-600 space-y-1.5 shadow-sm">

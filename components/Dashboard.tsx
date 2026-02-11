@@ -10,9 +10,10 @@ interface DashboardProps {
   onComplete: (id: string) => void;
   onUndo: (id: string) => void;
   onUpdate: (id: string, updates: { taskName?: string, status?: TaskAI['status'] }, metaUpdates: TaskMeta) => void;
+  model?: string;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ appState, viewState, onComplete, onUndo, onUpdate }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ appState, viewState, onComplete, onUndo, onUpdate, model }) => {
   const [showDone, setShowDone] = useState(false);
   const doneTasks = appState.tasks.filter(t => appState.doneIds.includes(t.id)).sort((a,b) => (b.createdAt || 0) - (a.createdAt || 0));
 
@@ -45,6 +46,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, viewState, onCom
                                 allTasks={appState.tasks}
                                 onComplete={onComplete} 
                                 onUpdate={onUpdate} 
+                                model={model}
                             />
                        ))}
                        {viewState.doer.length === 0 && (
@@ -77,7 +79,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, viewState, onCom
                                 isStale={isStale}
                                 allTasks={appState.tasks}
                                 onComplete={onComplete} 
-                                onUpdate={onUpdate} 
+                                onUpdate={onUpdate}
+                                model={model}
                             />
                        ))}
                        {viewState.manager.length === 0 && <div className="text-center py-10 text-xs text-slate-400">대기중인 건이 없습니다.</div>}
@@ -109,7 +112,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ appState, viewState, onCom
                                 allTasks={appState.tasks}
                                 compact
                                 onComplete={onComplete} 
-                                onUpdate={onUpdate} 
+                                onUpdate={onUpdate}
+                                model={model}
                             />
                        ))}
 

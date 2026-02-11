@@ -96,3 +96,20 @@ export interface ViewState {
   manager: Array<{ score: number; isStale: boolean; task: TaskAI }>; // Waiting & Decisions (Needs Chasing)
   planner: Array<{ score: number; isStale: boolean; task: TaskAI }>; // Backlog & Blocked
 }
+
+// --- Resolve Copilot Types ---
+export type ResolveType = "문구" | "체크리스트" | "블로그" | "의사결정";
+
+export interface ResolveOutput {
+  제목: string;
+  한줄요약: string;
+  추정여부: boolean;
+  근거요약: string;
+  카톡문구: string[];
+  메일문구: string[];
+  체크리스트: string[];
+  블로그뼈대: string[];
+  의사결정표: string[];
+  지금바로15분: string[];
+  완료기준80점: string;
+}

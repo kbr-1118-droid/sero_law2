@@ -1,5 +1,6 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
-import { PlanAIRaw, TaskAI, TaskAIRaw } from "../types";
+import { PlanAIRaw, TaskAI, TaskAIRaw, ResolveType, ResolveOutput } from "../types";
 import { v4 as uuidv4 } from 'uuid';
 
 const SYSTEM_INSTRUCTION = `
@@ -40,10 +41,48 @@ ${rawTasks}
 - 네이버 플레이스 업무면 플레이스체크를 채워라.
 `;
 
+// Resolve Copilot System Instruction
+const RESOLVE_SYSTEM = `
+너는 15년차 운영 컨설턴트이자 마케팅 PM이면서, 실무 산출물을 즉시 만드는 '해결형 코파일럿'이다.
+
+목표:
+- 사용자가 선택한 '업무 1개'에 대해, 실행에 바로 쓰는 산출물을 만든다.
+- 계획/원론 설명 금지. 결과물(문구/체크리스트/뼈대/의사결정표)만 제공한다.
+
+절대 규칙:
+- 입력에 없는 사실을 만들지 마라. 필요하면 추정여부=True로 표시하고, 가장 안전한 일반론 템플릿으로 처리하라.
+- 근거요약은 업무 원문에서 그대로 가져와라(없으면 빈 문자열). 새로 꾸며내지 마라.
+- 결과는 반드시 제공된 JSON 스키마(ResolveOutput)를 만족해야 한다.
+- '정리하기/확인하기' 같은 추상 행동 대신, 복사해서 바로 실행 가능한 문장으로 써라.
+- 출력은 한국어로.
+`;
+
+const RESOLVE_TEMPLATE = (taskText: string, resolveType: string) => `
+[선택한 업무(원문)]
+${taskText}
+
+[업무 타입 힌트]
+- 블로그/콘텐츠면: 블로그뼈대에 헤드라인/목차/CTA/FAQ까지 포함
+- 네이버 플레이스면: 체크리스트에 등록/검수/반려 방지 포인트 포함
+- 홈페이지/업체 자료 제공이면: 체크리스트에 요구자료/파일명/폴더구조/전달메시지 포함
+- 외주/업체 커뮤니케이션이면: 카톡문구/메일문구를 상황별로 제공
+- 계약/검토/의사결정이면: 의사결정표에 선택지/판단기준/추천(근거) 포함
+
+[요구 산출물 타입]
+${resolveType}
+
+[출력 요구]
+- ResolveOutput 스키마(JSON)로만 출력
+- 지금바로15분: 1~2개
+- 완료기준80점: 1줄
+`;
+
 // Helper to convert raw Korean keys to domain model English keys
 const mapRawToDomain = (raw: TaskAIRaw): TaskAI => {
   return {
-    id: raw.id || uuidv4(),
+    // CRITICAL FIX: Always generate a new UUID. 
+    // Do NOT rely on raw.id from AI as it may be duplicated (e.g., "task_1") or reused, causing React key collisions.
+    id: uuidv4(), 
     originalInput: raw.원본입력,
     taskName: raw.업무명,
     category: raw.업무분류,
@@ -184,3 +223,53 @@ export const analyzeTasks = async (lines: string[], modelName: string, existingT
     throw error;
   }
 };
+
+export const generateResolve = async (task: TaskAI, resolveType: ResolveType, modelName: string): Promise<ResolveOutput> => {
+    const apiKey = getApiKey();
+    if (!apiKey) throw new Error("API Key가 필요합니다.");
+    const ai = new GoogleGenAI({ apiKey });
+  
+    // Shrink text to avoid token limit issues (safe limit ~2500 chars)
+    let taskText = task.originalInput || task.taskName;
+    if (taskText.length > 2500) {
+        taskText = taskText.substring(0, 2500) + "\n...(truncated)";
+    }
+
+    const prompt = RESOLVE_TEMPLATE(taskText, resolveType);
+  
+    try {
+      const response = await ai.models.generateContent({
+        model: modelName,
+        config: {
+          systemInstruction: RESOLVE_SYSTEM,
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              제목: { type: Type.STRING },
+              한줄요약: { type: Type.STRING },
+              추정여부: { type: Type.BOOLEAN },
+              근거요약: { type: Type.STRING },
+              카톡문구: { type: Type.ARRAY, items: { type: Type.STRING } },
+              메일문구: { type: Type.ARRAY, items: { type: Type.STRING } },
+              체크리스트: { type: Type.ARRAY, items: { type: Type.STRING } },
+              블로그뼈대: { type: Type.ARRAY, items: { type: Type.STRING } },
+              의사결정표: { type: Type.ARRAY, items: { type: Type.STRING } },
+              지금바로15분: { type: Type.ARRAY, items: { type: Type.STRING } },
+              완료기준80점: { type: Type.STRING },
+            },
+            required: ["제목", "한줄요약", "추정여부", "지금바로15분", "완료기준80점"]
+          }
+        },
+        contents: prompt
+      });
+  
+      const text = response.text;
+      if (!text) throw new Error("AI 응답이 비어있습니다.");
+      return JSON.parse(text) as ResolveOutput;
+  
+    } catch (error: any) {
+      console.error("Resolve Error:", error);
+      throw error;
+    }
+  };

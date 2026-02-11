@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './components/Dashboard';
@@ -148,6 +149,7 @@ const App: React.FC = () => {
             onComplete={handleComplete} 
             onUndo={handleUndoComplete}
             onUpdate={handleUpdateTask}
+            model={model}
         />
       </main>
 
