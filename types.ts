@@ -1,3 +1,4 @@
+
 export type Category = 
   | "콘텐츠/자산 구축"
   | "외주/업체 관리"
@@ -76,10 +77,11 @@ export interface TaskMeta {
   due?: string; // YYYY-MM-DD
   channel?: Channel;
   estMin?: number;
-  dependsOn?: string;
-  dependencyIds?: string[]; // IDs of tasks that block this task
+  dependsOn?: string; // Text description (Legacy)
+  dependencyIds?: string[]; // IDs of tasks that block this task (Physical Link)
   note?: string;
   links?: TaskLink[];
+  lastUpdated?: number; // For "Stale" check
 }
 
 export interface AppState {
@@ -89,9 +91,8 @@ export interface AppState {
 }
 
 export interface ViewState {
-  enriched: Array<{ score: number; task: TaskAI }>;
-  focus: Array<{ score: number; task: TaskAI }>; // High priority ready tasks
-  backlog: Array<{ score: number; task: TaskAI }>; // Not ready / Low priority
-  waiting: Array<{ score: number; task: TaskAI }>; // External blockers
-  blocked: Array<{ score: number; task: TaskAI }>; // Internal blockers
+  enriched: Array<{ score: number; isStale: boolean; task: TaskAI }>;
+  doer: Array<{ score: number; isStale: boolean; task: TaskAI }>; // Ready to execute (High Priority)
+  manager: Array<{ score: number; isStale: boolean; task: TaskAI }>; // Waiting & Decisions (Needs Chasing)
+  planner: Array<{ score: number; isStale: boolean; task: TaskAI }>; // Backlog & Blocked
 }

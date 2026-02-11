@@ -1,18 +1,22 @@
+
 import React, { useState } from 'react';
-import { ChevronDown, ChevronUp, CheckCircle, AlertCircle, Clock, Calendar, StickyNote, ArrowRight, Pencil, Save, X, Link as LinkIcon, ExternalLink, Plus } from 'lucide-react';
+import { CheckCircle, Calendar, ArrowRight, Pencil, Save, X, Link as LinkIcon, ExternalLink, Plus, Copy, AlertTriangle, Link2 } from 'lucide-react';
 import { TaskAI, TaskMeta, Channel, TaskLink } from '../types';
 import { Badge } from './ui/Badge';
+import { generateChaseTemplate } from '../utils/scoring';
 
 interface TaskCardProps {
   task: TaskAI;
   meta?: TaskMeta;
   score: number;
+  isStale?: boolean;
+  allTasks?: TaskAI[]; // For dependency selection
   onComplete: (id: string) => void;
   onUpdate: (id: string, updates: { taskName?: string, status?: TaskAI['status'] }, metaUpdates: TaskMeta) => void;
-  compact?: boolean; // For Kanban View
+  compact?: boolean;
 }
 
-export const TaskCard: React.FC<TaskCardProps> = ({ task, meta, score, onComplete, onUpdate, compact = false }) => {
+export const TaskCard: React.FC<TaskCardProps> = ({ task, meta, score, isStale, allTasks = [], onComplete, onUpdate, compact = false }) => {
   const [expanded, setExpanded] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
 
@@ -23,6 +27,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, meta, score, onComplet
   const [editChannel, setEditChannel] = useState<Channel | "">(meta?.channel || "");
   const [editNote, setEditNote] = useState(meta?.note || "");
   const [editDepends, setEditDepends] = useState(meta?.dependsOn || "");
+  const [editDepIds, setEditDepIds] = useState<string[]>(meta?.dependencyIds || []);
   const [newLinkTitle, setNewLinkTitle] = useState("");
   const [newLinkUrl, setNewLinkUrl] = useState("");
   const [links, setLinks] = useState<TaskLink[]>(meta?.links || []);
@@ -36,10 +41,28 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, meta, score, onComplet
             channel: editChannel as Channel || undefined, 
             note: editNote || undefined,
             dependsOn: editDepends || undefined,
-            links: links
+            dependencyIds: editDepIds,
+            links: links,
+            lastUpdated: Date.now()
         }
     );
     setIsEditing(false);
+  };
+
+  const handleChaseCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const daysWait = meta?.lastUpdated ? Math.floor((Date.now() - meta.lastUpdated) / (1000 * 60 * 60 * 24)) : 0;
+    const text = generateChaseTemplate(task.taskName, daysWait);
+    navigator.clipboard.writeText(text);
+    alert("독촉 메시지가 복사되었습니다:\n" + text);
+  };
+
+  const toggleDepId = (id: string) => {
+    if (editDepIds.includes(id)) {
+        setEditDepIds(editDepIds.filter(d => d !== id));
+    } else {
+        setEditDepIds([...editDepIds, id]);
+    }
   };
 
   const handleAddLink = () => {
@@ -55,13 +78,13 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, meta, score, onComplet
   };
 
   const handleCancel = () => {
-    // Reset to props
     setEditName(task.taskName);
     setEditStatus(task.status);
     setEditDue(meta?.due || "");
     setEditChannel(meta?.channel || "");
     setEditNote(meta?.note || "");
     setEditDepends(meta?.dependsOn || "");
+    setEditDepIds(meta?.dependencyIds || []);
     setLinks(meta?.links || []);
     setIsEditing(false);
   };
@@ -72,17 +95,18 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, meta, score, onComplet
       case "자료 부족":
       case "선행 작업 필요": return "warning";
       case "의사결정 필요": return "danger";
+      case "외부 응답 대기": return "default";
       default: return "secondary";
     }
   };
 
   if (isEditing) {
     return (
-        <div className="border border-blue-300 rounded-xl bg-white shadow-lg p-4 space-y-4 z-10 relative">
+        <div className="border border-blue-400 rounded-xl bg-white shadow-xl p-4 space-y-4 z-20 relative ring-4 ring-blue-50/50">
             <div>
                 <label className="block text-xs font-semibold text-slate-500 mb-1">업무명</label>
                 <input 
-                    className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                    className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none"
                     value={editName}
                     onChange={e => setEditName(e.target.value)}
                 />
@@ -134,13 +158,20 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, meta, score, onComplet
                     />
                 </div>
                 <div>
-                    <label className="block text-xs font-semibold text-slate-500 mb-1">의존성/대기</label>
-                    <input 
-                        className="w-full border border-slate-300 rounded px-2 py-1.5 text-xs"
-                        placeholder="예: 업체 연락 대기"
-                        value={editDepends}
-                        onChange={e => setEditDepends(e.target.value)}
-                    />
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">선행 업무 (물리적 연결)</label>
+                    <div className="border border-slate-300 rounded p-1.5 max-h-24 overflow-y-auto bg-slate-50">
+                        {allTasks.filter(t => t.id !== task.id).map(t => (
+                            <div key={t.id} className="flex items-center gap-2 mb-1">
+                                <input 
+                                    type="checkbox" 
+                                    checked={editDepIds.includes(t.id)}
+                                    onChange={() => toggleDepId(t.id)}
+                                    className="rounded border-slate-300 w-3 h-3"
+                                />
+                                <span className="text-xs truncate">{t.taskName}</span>
+                            </div>
+                        ))}
+                    </div>
                 </div>
              </div>
 
@@ -173,15 +204,6 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, meta, score, onComplet
                 </div>
              </div>
 
-             <div>
-                <label className="block text-xs font-semibold text-slate-500 mb-1">메모</label>
-                <textarea 
-                    className="w-full border border-slate-300 rounded px-2 py-1.5 text-xs h-16 resize-none"
-                    value={editNote}
-                    onChange={e => setEditNote(e.target.value)}
-                />
-            </div>
-
             <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
                 <button 
                     onClick={handleCancel}
@@ -191,7 +213,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, meta, score, onComplet
                 </button>
                 <button 
                     onClick={handleSave}
-                    className="flex items-center gap-1 px-3 py-1.5 rounded bg-blue-600 text-white text-xs font-medium hover:bg-blue-700"
+                    className="flex items-center gap-1 px-3 py-1.5 rounded bg-blue-600 text-white text-xs font-medium hover:bg-blue-700 shadow-sm"
                 >
                     <Save className="w-3.5 h-3.5" /> 저장
                 </button>
@@ -201,39 +223,48 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, meta, score, onComplet
   }
 
   return (
-    <div className={`border rounded-lg bg-white transition-all duration-200 group/card ${expanded ? 'ring-1 ring-blue-500 border-blue-500 shadow-lg relative z-10' : 'border-slate-200 hover:border-blue-300 hover:shadow-sm'}`}>
-      {/* Kanban Card Header */}
+    <div className={`border rounded-xl bg-white transition-all duration-200 group/card relative ${expanded ? 'ring-1 ring-blue-500 border-blue-500 shadow-lg z-10' : 'border-slate-200 hover:border-blue-300 hover:shadow-md'}`}>
+      
+      {/* Stale Indicator */}
+      {isStale && !compact && (
+          <div className="absolute -top-1.5 -right-1.5 z-20">
+              <div className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-sm flex items-center gap-0.5" title="3일 이상 업데이트 없음">
+                  <AlertTriangle className="w-3 h-3" /> 방치됨
+              </div>
+          </div>
+      )}
+
+      {/* Card Header */}
       <div 
-        className="p-3 cursor-pointer select-none"
+        className="p-3.5 cursor-pointer select-none"
         onClick={() => setExpanded(!expanded)}
       >
-          <div className="flex items-start justify-between gap-2">
+          <div className="flex items-start justify-between gap-3">
             <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
-                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded text-white ${score >= 70 ? 'bg-blue-600' : score >= 50 ? 'bg-slate-500' : 'bg-slate-300'}`}>
-                    {score}
-                    </span>
+                <div className="flex items-center gap-1.5 mb-2 flex-wrap">
                     {!compact && <Badge variant={getStatusVariant(task.status)}>{task.status}</Badge>}
-                    <span className="text-[10px] text-slate-400 font-medium truncate max-w-[80px]">{task.category}</span>
+                    <span className="text-[10px] text-slate-400 font-medium truncate max-w-[80px] bg-slate-100 px-1.5 py-0.5 rounded">{task.category}</span>
+                    {meta?.due && <span className={`flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded ${new Date(meta.due) < new Date() ? 'bg-red-100 text-red-600 font-bold' : 'bg-slate-50 text-slate-500'}`}><Calendar className="w-3 h-3" />{meta.due}</span>}
                 </div>
-                <h3 className={`font-medium text-slate-900 leading-snug ${compact ? 'text-sm' : 'text-base'}`}>{task.taskName}</h3>
+                
+                <h3 className={`font-medium text-slate-900 leading-snug break-keep ${compact ? 'text-sm' : 'text-base'}`}>{task.taskName}</h3>
                 
                 {/* Meta Icons */}
                 <div className="flex items-center gap-3 mt-2 text-xs text-slate-400">
-                    {meta?.channel && <span className="flex items-center gap-1 truncate max-w-[100px]"><span className="w-1.5 h-1.5 rounded-full bg-slate-400 flex-shrink-0"></span>{meta.channel}</span>}
-                    {meta?.due && <span className={`flex items-center gap-1 ${new Date(meta.due) < new Date() ? 'text-red-500 font-bold' : ''}`}><Calendar className="w-3 h-3" />{meta.due}</span>}
+                    {meta?.channel && <span className="flex items-center gap-1 truncate max-w-[100px]"><div className="w-1.5 h-1.5 rounded-full bg-slate-400 flex-shrink-0"></div>{meta.channel}</span>}
+                    {meta?.dependencyIds && meta.dependencyIds.length > 0 && <span className="flex items-center gap-1 text-amber-500" title="선행 업무 있음"><Link2 className="w-3 h-3" /> {meta.dependencyIds.length}</span>}
                     {meta?.links && meta.links.length > 0 && <span className="flex items-center gap-1 text-blue-500"><LinkIcon className="w-3 h-3" /> {meta.links.length}</span>}
                 </div>
             </div>
 
-            <div className="flex flex-col gap-1 opacity-0 group-hover/card:opacity-100 transition-opacity">
+            <div className="flex flex-col gap-1.5 opacity-0 group-hover/card:opacity-100 transition-opacity">
                  <button
                     onClick={(e) => {
                         e.stopPropagation();
                         onComplete(task.id);
                     }}
-                    className="p-1.5 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded bg-white border border-slate-100 shadow-sm"
-                    title="완료"
+                    className="p-1.5 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded-lg bg-white border border-slate-100 shadow-sm transition-colors"
+                    title="완료 처리"
                 >
                     <CheckCircle className="w-4 h-4" />
                 </button>
@@ -247,14 +278,26 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, meta, score, onComplet
                         setEditChannel(meta?.channel || "");
                         setEditNote(meta?.note || "");
                         setEditDepends(meta?.dependsOn || "");
+                        setEditDepIds(meta?.dependencyIds || []);
                         setLinks(meta?.links || []);
                         setExpanded(false);
                     }}
-                    className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded bg-white border border-slate-100 shadow-sm"
+                    className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg bg-white border border-slate-100 shadow-sm transition-colors"
                     title="수정"
                 >
                     <Pencil className="w-4 h-4" />
                 </button>
+                
+                {/* Chase Button (Only for External Wait) */}
+                {task.status === "외부 응답 대기" && (
+                    <button
+                        onClick={handleChaseCopy}
+                        className="p-1.5 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg bg-white border border-slate-100 shadow-sm transition-colors"
+                        title="독촉 메시지 복사"
+                    >
+                        <Copy className="w-4 h-4" />
+                    </button>
+                )}
             </div>
           </div>
       </div>
@@ -262,45 +305,39 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, meta, score, onComplet
       {/* Expanded Details */}
       {expanded && (
         <div className="px-3 pb-3 border-t border-slate-100 bg-slate-50/50 rounded-b-lg space-y-3 pt-3 text-sm">
+           {/* Block Reason & Next Action */}
+          <div>
+              <div className="flex items-center justify-between mb-1.5">
+                  <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">다음 행동</h4>
+                  {task.isEstimated && <span className="text-[10px] text-amber-600 bg-amber-100 px-1.5 rounded">추정됨</span>}
+              </div>
+              <ul className="space-y-1">
+                  {task.nextActions.map((action, idx) => (
+                      <li key={idx} className="flex items-start gap-2 text-slate-800 text-xs bg-white p-2.5 rounded border border-slate-200 shadow-sm">
+                          <ArrowRight className="w-3.5 h-3.5 text-blue-500 mt-0.5 flex-shrink-0" />
+                          <span className="leading-relaxed">{action}</span>
+                      </li>
+                  ))}
+              </ul>
+          </div>
+
+          {(meta?.dependsOn || meta?.note) && (
+             <div className="bg-white p-2.5 rounded border border-slate-200 text-xs text-slate-600 space-y-1.5 shadow-sm">
+                 {meta.dependsOn && <div>⚠️ <b>의존성:</b> {meta.dependsOn}</div>}
+                 {meta.note && <div>📝 <b>메모:</b> {meta.note}</div>}
+             </div>
+          )}
+          
            {/* Links */}
            {meta?.links && meta.links.length > 0 && (
-               <div className="space-y-1">
+               <div className="space-y-1 pt-1">
                    {meta.links.map((l, i) => (
-                       <a key={i} href={l.url} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-xs text-blue-600 hover:underline p-1.5 bg-blue-50 rounded border border-blue-100">
+                       <a key={i} href={l.url} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-xs text-blue-600 hover:underline p-2 bg-blue-50/50 rounded border border-blue-100">
                            <ExternalLink className="w-3 h-3" /> {l.title}
                        </a>
                    ))}
                </div>
            )}
-
-          {/* Block Reason & Next Action */}
-          <div>
-              <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">다음 행동</h4>
-              <ul className="space-y-1">
-                  {task.nextActions.map((action, idx) => (
-                      <li key={idx} className="flex items-start gap-2 text-slate-800 text-xs bg-white p-2 rounded border border-slate-200">
-                          <ArrowRight className="w-3 h-3 text-blue-500 mt-0.5 flex-shrink-0" />
-                          <span>{action}</span>
-                      </li>
-                  ))}
-              </ul>
-          </div>
-          
-           {/* Tips */}
-          <div>
-             <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">막힘 해결</h4>
-             <p className="text-xs text-slate-600 bg-amber-50 p-2 rounded border border-amber-100">
-                🚧 {task.blockReason} <br/>
-                💡 {task.solutionTip}
-             </p>
-          </div>
-
-          {(meta?.dependsOn || meta?.note) && (
-             <div className="bg-slate-100 p-2 rounded text-xs text-slate-600 space-y-1">
-                 {meta.dependsOn && <div>⚠️ 의존: {meta.dependsOn}</div>}
-                 {meta.note && <div>📝 {meta.note}</div>}
-             </div>
-          )}
         </div>
       )}
     </div>

@@ -62,10 +62,56 @@ const mapRawToDomain = (raw: TaskAIRaw): TaskAI => {
   };
 };
 
-// Initialize Google GenAI
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Safe API Key Retrieval
+export const getApiKey = (): string => {
+  // 1. Try process.env (Node/Webpack/some Vite configs)
+  try {
+    if (typeof process !== 'undefined' && process.env?.API_KEY) {
+      return process.env.API_KEY;
+    }
+  } catch (e) {}
+
+  // 2. Try import.meta.env (Standard Vite)
+  try {
+    // @ts-ignore
+    if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_KEY) {
+       // @ts-ignore
+       return import.meta.env.VITE_API_KEY;
+    }
+  } catch (e) {}
+
+  // 3. Try LocalStorage (User entered)
+  try {
+    const localKey = localStorage.getItem('user_gemini_api_key');
+    if (localKey) return localKey;
+  } catch (e) {}
+
+  return "";
+};
+
+export const hasValidApiKey = (): boolean => {
+    return !!getApiKey();
+};
+
+export const setLocalApiKey = (key: string) => {
+    localStorage.setItem('user_gemini_api_key', key);
+};
+
+export const removeLocalApiKey = () => {
+    localStorage.removeItem('user_gemini_api_key');
+};
+
 
 export const analyzeTasks = async (lines: string[], modelName: string, existingTasks: TaskAI[] = []): Promise<TaskAI[]> => {
+  const apiKey = getApiKey();
+  
+  if (!apiKey) {
+    throw new Error("API Key가 없습니다. 설정 메뉴에서 키를 입력해주세요.");
+  }
+
+  // Initialize per request to ensure we use the latest key
+  const ai = new GoogleGenAI({ apiKey });
+
   // Context summary for deduplication
   const contextSummary = existingTasks.map(t => `- ${t.taskName} (${t.status})`).slice(0, 50).join('\n');
   const prompt = USER_TEMPLATE(lines.join('\n'), contextSummary);
@@ -131,6 +177,10 @@ export const analyzeTasks = async (lines: string[], modelName: string, existingT
     return parsedResponse.업무상세.map(mapRawToDomain);
   } catch (error: any) {
     console.error("Analysis Error:", error);
+    // Explicitly handle API key errors
+    if (error.message?.includes("API key") || error.status === 403) {
+        throw new Error("API Key가 유효하지 않습니다. 설정에서 키를 확인해주세요.");
+    }
     throw error;
   }
 };

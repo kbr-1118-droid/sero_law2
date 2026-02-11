@@ -1,22 +1,29 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './components/Dashboard';
 import { CopilotPanel } from './components/CopilotPanel';
+import { ApiKeyModal } from './components/ApiKeyModal';
 import { AppState, TaskAI, TaskMeta } from './types';
 import { buildViews } from './utils/scoring';
+import { hasValidApiKey } from './services/geminiService';
 
 const STORAGE_KEY = 'marketing-ops-v3';
 const MODEL_KEY = 'marketing-ops-model';
 
 const App: React.FC = () => {
   const [model, setModel] = useState("gemini-3-flash-preview");
+  const [hasKey, setHasKey] = useState(true); // Default check triggers effect
   
   const [appState, setAppState] = useState<AppState>({
     tasks: [],
     doneIds: [],
     meta: {},
   });
+
+  // Check API Key
+  useEffect(() => {
+    setHasKey(hasValidApiKey());
+  }, []);
 
   // Load initial state & model
   useEffect(() => {
@@ -123,16 +130,17 @@ const App: React.FC = () => {
 
   return (
     <div className="flex h-screen bg-slate-100 font-sans text-slate-900 overflow-hidden">
-      {/* 1. Sidebar (Settings & Data) */}
+      {!hasKey && <ApiKeyModal onSaved={() => setHasKey(true)} />}
+      
       <Sidebar 
         model={model} 
         setModel={setModel} 
         onSave={handleSaveFile}
         onLoad={handleLoadFile}
         onReset={handleReset}
+        onResetKey={() => setHasKey(false)}
       />
       
-      {/* 2. Main Content (Kanban & Focus) */}
       <main className="flex-1 flex flex-col h-full min-w-0 shadow-xl z-0">
         <Dashboard 
             appState={appState} 
@@ -143,7 +151,6 @@ const App: React.FC = () => {
         />
       </main>
 
-      {/* 3. Copilot Panel (Input & AI) */}
       <CopilotPanel 
           model={model}
           existingTasks={contextTasks}
