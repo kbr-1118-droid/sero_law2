@@ -7,6 +7,7 @@ import { ApiKeyModal } from './components/ApiKeyModal';
 import { AppState, TaskAI, TaskMeta } from './types';
 import { buildViews } from './utils/scoring';
 import { hasValidApiKey } from './services/geminiService';
+import { v4 as uuidv4 } from 'uuid';
 
 const STORAGE_KEY = 'marketing-ops-v3';
 const MODEL_KEY = 'marketing-ops-model';
@@ -26,6 +27,38 @@ const App: React.FC = () => {
     setHasKey(hasValidApiKey());
   }, []);
 
+  // Helper: Sanitize loaded tasks to ensure unique IDs (Fixes "Shared State" bug)
+  const sanitizeLoadedData = (data: AppState): AppState => {
+    const seenIds = new Set<string>();
+    const newTasks: TaskAI[] = [];
+    const newMeta = { ...data.meta };
+    let hasChanges = false;
+
+    data.tasks.forEach(t => {
+      if (seenIds.has(t.id)) {
+        // Collision detected! Generate new ID
+        const newId = uuidv4();
+        // Try to preserve meta if possible (copy from old ID)
+        if (newMeta[t.id]) {
+            newMeta[newId] = { ...newMeta[t.id] };
+        } else {
+            newMeta[newId] = {};
+        }
+        newTasks.push({ ...t, id: newId });
+        hasChanges = true;
+      } else {
+        seenIds.add(t.id);
+        newTasks.push(t);
+      }
+    });
+
+    if (hasChanges) {
+      console.warn("Fixed duplicate task IDs in loaded data.");
+      return { ...data, tasks: newTasks, meta: newMeta };
+    }
+    return data;
+  };
+
   // Load initial state & model
   useEffect(() => {
     const savedData = localStorage.getItem(STORAGE_KEY);
@@ -33,7 +66,10 @@ const App: React.FC = () => {
     
     if (savedData) {
       try {
-        setAppState(JSON.parse(savedData));
+        const parsed = JSON.parse(savedData);
+        // Apply sanitization immediately on load
+        const cleanData = sanitizeLoadedData(parsed);
+        setAppState(cleanData);
       } catch (e) {
         console.error("Failed to load local state", e);
       }
@@ -56,8 +92,15 @@ const App: React.FC = () => {
 
   const handleAddTasks = (newTasks: TaskAI[]) => {
     setAppState(prev => {
+      // Double check uniqueness against existing
+      const existingIds = new Set(prev.tasks.map(t => t.id));
+      const safeNewTasks = newTasks.map(t => {
+          if (existingIds.has(t.id)) return { ...t, id: uuidv4() };
+          return t;
+      });
+
       const existingNames = new Set(prev.tasks.map(t => t.taskName));
-      const filtered = newTasks.filter(t => !existingNames.has(t.taskName));
+      const filtered = safeNewTasks.filter(t => !existingNames.has(t.taskName));
       
       const newMeta: Record<string, TaskMeta> = { ...prev.meta };
       filtered.forEach(t => {
@@ -73,10 +116,16 @@ const App: React.FC = () => {
   };
 
   const handleManualAdd = (task: TaskAI, meta: TaskMeta) => {
+    // Ensure ID is unique
+    const safeTask = { ...task };
+    if (appState.tasks.some(t => t.id === safeTask.id)) {
+        safeTask.id = uuidv4();
+    }
+
     setAppState(prev => ({
       ...prev,
-      tasks: [...prev.tasks, task],
-      meta: { ...prev.meta, [task.id]: meta }
+      tasks: [...prev.tasks, safeTask],
+      meta: { ...prev.meta, [safeTask.id]: meta }
     }));
   };
 
@@ -116,7 +165,8 @@ const App: React.FC = () => {
   };
 
   const handleLoadFile = (data: AppState) => {
-    setAppState(data);
+    // Sanitize uploaded file too
+    setAppState(sanitizeLoadedData(data));
   };
 
   const handleReset = () => {
