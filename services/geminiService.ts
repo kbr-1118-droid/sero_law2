@@ -58,135 +58,79 @@ const mapRawToDomain = (raw: TaskAIRaw): TaskAI => {
     requiredDataCheck: raw.요구자료체크 || [],
     blogStructure: raw.블로그구조 || [],
     placeCheck: raw.플레이스체크 || [],
-    createdAt: Date.now(), // Set creation time
+    createdAt: Date.now(),
   };
 };
 
-// Safe API Key Retrieval
-export const getApiKey = (): string => {
-  // 1. Try process.env (Node/Webpack/some Vite configs)
-  try {
-    if (typeof process !== 'undefined' && process.env?.API_KEY) {
-      return process.env.API_KEY;
-    }
-  } catch (e) {}
-
-  // 2. Try import.meta.env (Standard Vite)
-  try {
-    // @ts-ignore
-    if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_KEY) {
-       // @ts-ignore
-       return import.meta.env.VITE_API_KEY;
-    }
-  } catch (e) {}
-
-  // 3. Try LocalStorage (User entered)
-  try {
-    const localKey = localStorage.getItem('user_gemini_api_key');
-    if (localKey) return localKey;
-  } catch (e) {}
-
-  return "";
-};
-
-export const hasValidApiKey = (): boolean => {
-    return !!getApiKey();
-};
-
-export const setLocalApiKey = (key: string) => {
-    localStorage.setItem('user_gemini_api_key', key);
-};
-
-export const removeLocalApiKey = () => {
-    localStorage.removeItem('user_gemini_api_key');
-};
+// Initialize Google GenAI
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export const analyzeTasks = async (lines: string[], modelName: string, existingTasks: TaskAI[] = []): Promise<TaskAI[]> => {
-  const apiKey = getApiKey();
-  
-  if (!apiKey) {
-    throw new Error("API Key가 없습니다. 설정 메뉴에서 키를 입력해주세요.");
-  }
-
-  const client = new GoogleGenAI({ apiKey });
-  
   // Context summary for deduplication
   const contextSummary = existingTasks.map(t => `- ${t.taskName} (${t.status})`).slice(0, 50).join('\n');
-  
   const prompt = USER_TEMPLATE(lines.join('\n'), contextSummary);
 
-  // Define Response Schema
-  const responseSchema = {
-    type: Type.OBJECT,
-    properties: {
-      업무상세: {
-        type: Type.ARRAY,
-        items: {
-          type: Type.OBJECT,
-          properties: {
-            id: { type: Type.STRING, description: "Unique ID" },
-            원본입력: { type: Type.STRING, description: "User original input" },
-            업무명: { type: Type.STRING, description: "Refined task name" },
-            업무분류: { 
-              type: Type.STRING, 
-              enum: ["콘텐츠/자산 구축", "외주/업체 관리", "내부 협조/자료 수집", "검토/의사결정", "대기/보류"] 
-            },
-            업무상태: { 
-              type: Type.STRING, 
-              enum: ["바로 실행 가능", "선행 작업 필요", "외부 응답 대기", "자료 부족", "의사결정 필요", "잠시 보류해도 무방"] 
-            },
-            막히는이유: { type: Type.STRING },
-            다음행동: { type: Type.ARRAY, items: { type: Type.STRING } },
-            해결팁: { type: Type.STRING },
-            추정여부: { type: Type.BOOLEAN },
-            근거요약: { type: Type.STRING },
-            선택지: { type: Type.ARRAY, items: { type: Type.STRING } },
-            판단기준: { type: Type.ARRAY, items: { type: Type.STRING } },
-            요구자료체크: { type: Type.ARRAY, items: { type: Type.STRING } },
-            블로그구조: { type: Type.ARRAY, items: { type: Type.STRING } },
-            플레이스체크: { type: Type.ARRAY, items: { type: Type.STRING } },
-          },
-          required: ["id", "원본입력", "업무명", "업무분류", "업무상태", "막히는이유", "다음행동", "해결팁", "추정여부"],
-        }
-      }
-    },
-    required: ["업무상세"]
-  };
-
   try {
-    const response = await client.models.generateContent({
-      model: modelName || "gemini-2.0-flash",
-      contents: prompt,
+    const response = await ai.models.generateContent({
+      model: modelName,
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
         responseMimeType: "application/json",
-        responseSchema: responseSchema,
-        temperature: 0,
-      }
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            업무상세: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  id: { type: Type.STRING },
+                  원본입력: { type: Type.STRING },
+                  업무명: { type: Type.STRING },
+                  업무분류: { type: Type.STRING, enum: ["콘텐츠/자산 구축", "외주/업체 관리", "내부 협조/자료 수집", "검토/의사결정", "대기/보류"] },
+                  업무상태: { type: Type.STRING, enum: ["바로 실행 가능", "선행 작업 필요", "외부 응답 대기", "자료 부족", "의사결정 필요", "잠시 보류해도 무방"] },
+                  막히는이유: { type: Type.STRING },
+                  다음행동: { type: Type.ARRAY, items: { type: Type.STRING } },
+                  해결팁: { type: Type.STRING },
+                  추정여부: { type: Type.BOOLEAN },
+                  근거요약: { type: Type.STRING },
+                  선택지: { type: Type.ARRAY, items: { type: Type.STRING } },
+                  판단기준: { type: Type.ARRAY, items: { type: Type.STRING } },
+                  요구자료체크: { type: Type.ARRAY, items: { type: Type.STRING } },
+                  블로그구조: { type: Type.ARRAY, items: { type: Type.STRING } },
+                  플레이스체크: { type: Type.ARRAY, items: { type: Type.STRING } },
+                },
+                required: ["id", "원본입력", "업무명", "업무분류", "업무상태", "막히는이유", "다음행동", "해결팁", "추정여부"],
+              }
+            }
+          },
+          required: ["업무상세"]
+        }
+      },
+      contents: prompt,
     });
 
-    let parsedResponse = response.parsed as PlanAIRaw | null;
-    
-    if (!parsedResponse && response.text) {
-        try {
-            const rawText = response.text;
-            const jsonText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
-            parsedResponse = JSON.parse(jsonText) as PlanAIRaw;
-        } catch (e) {
-            console.error("Manual parsing failed:", e);
-        }
+    const textPart = response.text;
+    if (!textPart) {
+        throw new Error("Invalid response format from AI");
+    }
+
+    let parsedResponse: PlanAIRaw | null = null;
+    try {
+        parsedResponse = JSON.parse(textPart) as PlanAIRaw;
+    } catch (e) {
+         // Fallback cleaning
+         const jsonText = textPart.replace(/```json/g, '').replace(/```/g, '').trim();
+         parsedResponse = JSON.parse(jsonText) as PlanAIRaw;
     }
 
     if (!parsedResponse?.업무상세) {
-       console.error("Invalid Response Structure:", parsedResponse);
-       throw new Error("AI 응답을 분석할 수 없습니다. 잠시 후 다시 시도해주세요.");
+       throw new Error("Failed to parse AI response structure.");
     }
 
     return parsedResponse.업무상세.map(mapRawToDomain);
   } catch (error: any) {
-    console.error("Gemini Analysis Error:", error);
-    // Pass through specific error messages
-    if (error.message.includes("API Key")) throw error;
-    throw new Error("AI 분석 중 오류가 발생했습니다: " + (error.message || "Unknown error"));
+    console.error("Analysis Error:", error);
+    throw error;
   }
 };

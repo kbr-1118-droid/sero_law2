@@ -1,29 +1,22 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './components/Dashboard';
 import { CopilotPanel } from './components/CopilotPanel';
-import { ApiKeyModal } from './components/ApiKeyModal';
 import { AppState, TaskAI, TaskMeta } from './types';
 import { buildViews } from './utils/scoring';
-import { hasValidApiKey } from './services/geminiService';
 
 const STORAGE_KEY = 'marketing-ops-v3';
 const MODEL_KEY = 'marketing-ops-model';
 
 const App: React.FC = () => {
-  const [model, setModel] = useState("gemini-2.0-flash");
-  const [hasKey, setHasKey] = useState(true); // Default to true, check on mount
+  const [model, setModel] = useState("gemini-3-flash-preview");
   
   const [appState, setAppState] = useState<AppState>({
     tasks: [],
     doneIds: [],
     meta: {},
   });
-
-  // Check API Key
-  useEffect(() => {
-    setHasKey(hasValidApiKey());
-  }, []);
 
   // Load initial state & model
   useEffect(() => {
@@ -55,7 +48,6 @@ const App: React.FC = () => {
 
   const handleAddTasks = (newTasks: TaskAI[]) => {
     setAppState(prev => {
-      // Name-based Deduplication (Basic)
       const existingNames = new Set(prev.tasks.map(t => t.taskName));
       const filtered = newTasks.filter(t => !existingNames.has(t.taskName));
       
@@ -127,13 +119,10 @@ const App: React.FC = () => {
     return buildViews(appState.tasks, new Set(appState.doneIds), appState.meta);
   }, [appState]);
 
-  // Context Tasks for AI (Active tasks)
   const contextTasks = useMemo(() => appState.tasks.filter(t => !appState.doneIds.includes(t.id)), [appState.tasks, appState.doneIds]);
 
   return (
     <div className="flex h-screen bg-slate-100 font-sans text-slate-900 overflow-hidden">
-      {!hasKey && <ApiKeyModal onSaved={() => setHasKey(true)} />}
-      
       {/* 1. Sidebar (Settings & Data) */}
       <Sidebar 
         model={model} 
@@ -141,7 +130,6 @@ const App: React.FC = () => {
         onSave={handleSaveFile}
         onLoad={handleLoadFile}
         onReset={handleReset}
-        onResetKey={() => setHasKey(false)}
       />
       
       {/* 2. Main Content (Kanban & Focus) */}

@@ -1,7 +1,7 @@
+
 import React, { useRef } from 'react';
-import { Save, Upload, Trash2, Settings, FileJson, Cpu, Key } from 'lucide-react';
+import { Save, Upload, Trash2, FileJson, Cpu } from 'lucide-react';
 import { AppState } from '../types';
-import { removeLocalApiKey } from '../services/geminiService';
 
 interface SidebarProps {
   model: string;
@@ -9,10 +9,9 @@ interface SidebarProps {
   onSave: () => void;
   onLoad: (data: AppState) => void;
   onReset: () => void;
-  onResetKey: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ model, setModel, onSave, onLoad, onReset, onResetKey }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ model, setModel, onSave, onLoad, onReset }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -29,15 +28,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ model, setModel, onSave, onLoa
       }
     };
     reader.readAsText(file);
-    // Reset input
     e.target.value = '';
-  };
-
-  const handleClearKey = () => {
-    if(confirm("저장된 API Key를 삭제하시겠습니까?")) {
-        removeLocalApiKey();
-        onResetKey();
-    }
   };
 
   return (
@@ -62,8 +53,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ model, setModel, onSave, onLoa
                 onChange={(e) => setModel(e.target.value)}
                 className="w-full text-sm border border-slate-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
             >
-                <option value="gemini-2.0-flash">Gemini 2.0 Flash (빠름/추천)</option>
-                <option value="gemini-1.5-pro">Gemini 1.5 Pro (정교한 추론)</option>
+                <option value="gemini-3-flash-preview">Gemini 3.0 Flash (빠름/추천)</option>
+                <option value="gemini-3-pro-preview">Gemini 3.0 Pro (정교한 추론)</option>
             </select>
             
             {/* Custom Model Input (Fallback) */}
@@ -72,20 +63,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ model, setModel, onSave, onLoa
                   type="text"
                   value={model}
                   onChange={(e) => setModel(e.target.value)}
-                  placeholder="직접 입력 (예: gemini-2.0-pro-exp)"
+                  placeholder="직접 입력 (예: gemini-3-flash-preview)"
                   className="w-full text-xs border border-slate-200 rounded-md px-2 py-1.5 text-slate-500 focus:outline-none focus:border-blue-400"
                 />
             </div>
             <p className="text-[10px] text-slate-400 leading-tight">
               'Flash'는 속도가 빠르고, 'Pro'는 복잡한 맥락 파악에 유리합니다.
             </p>
-            
-            <button 
-                onClick={handleClearKey}
-                className="text-xs text-slate-400 hover:text-red-500 flex items-center gap-1 mt-2 underline"
-            >
-                <Key className="w-3 h-3" /> API Key 재설정
-            </button>
           </div>
         </div>
 
