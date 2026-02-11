@@ -3,27 +3,31 @@ import { PlanAIRaw, TaskAI, TaskAIRaw } from "../types";
 import { v4 as uuidv4 } from 'uuid';
 
 const SYSTEM_INSTRUCTION = `
-너는 12년차 시니어 마케팅 PM + 운영 컨설턴트다.
+너는 15년차 시니어 마케팅 PM이자 운영 컨설턴트다.
 상황: 광고 집행 전 초기 구축 단계(블로그/플레이스/홈페이지/외주/내부협업/계약검토/자료제공) 업무가 병렬로 진행된다.
 
 목표:
 - 입력된 업무를 구조화하고(업무명/분류/상태),
 - 15~30분 단위의 매우 구체적인 '다음 행동'을 1~2개만 제시하여 실행을 돕는다.
+- 이미 존재하는 업무와 중복된다면 최대한 합치거나, 기존 업무의 상태를 업데이트하는 방향으로 분석하라.
 
 절대 규칙:
 - 입력에 없는 사실을 만들지 마라.
 - 업무는 반드시 원본입력 1항목에서만 도출해라. 서로 다른 항목을 합치지 마라.
 - 모호하면 추정여부=True. 상태는 '의사결정 필요' 또는 '자료 부족' 또는 '잠시 보류'로 보내라.
 - 근거요약은 원본입력에서 그대로 가져와라(새로 만들지 마라). 근거가 없으면 빈 문자열.
-- 다음행동은 '정리하기/확인하기' 같은 추상어를 피하고, 실제 행동 문장으로 써라.
+- 다음행동은 '정리하기/확인하기' 같은 추상어를 피하고, 실제 행동 문장으로 써라. (예: "OO업체에 견적 요청 메일 발송", "팀장님께 예산안 결재 올리기")
 - 블로그/플레이스/홈페이지/외주/계약 관련이면 해당 도메인 체크리스트를 적극 채워라.
 - 출력은 반드시 주어진 JSON 스키마(PlanAI)를 만족해야 한다.
 `;
 
-const USER_TEMPLATE = (rawTasks: string) => `
-아래는 사용자가 입력한 업무 목록이다. 각 항목은 독립 업무다.
+const USER_TEMPLATE = (rawTasks: string, contextTasks: string) => `
+아래는 사용자가 입력한 새로운 업무 목록이다.
 
-[사용자 입력]
+[기존 보유 업무 목록 (참고용 - 중복 방지)]
+${contextTasks || "(없음)"}
+
+[사용자 입력 (신규)]
 ${rawTasks}
 
 [출력 요구]
@@ -54,17 +58,22 @@ const mapRawToDomain = (raw: TaskAIRaw): TaskAI => {
     requiredDataCheck: raw.요구자료체크 || [],
     blogStructure: raw.블로그구조 || [],
     placeCheck: raw.플레이스체크 || [],
+    createdAt: Date.now(), // Set creation time
   };
 };
 
-export const analyzeTasks = async (lines: string[], modelName: string): Promise<TaskAI[]> => {
+export const analyzeTasks = async (lines: string[], modelName: string, existingTasks: TaskAI[] = []): Promise<TaskAI[]> => {
   const apiKey = process.env.API_KEY;
   if (!apiKey) {
     throw new Error("API Key is missing in environment variables.");
   }
 
   const client = new GoogleGenAI({ apiKey });
-  const prompt = USER_TEMPLATE(lines.join('\n'));
+  
+  // Context summary for deduplication
+  const contextSummary = existingTasks.map(t => `- ${t.taskName} (${t.status})`).slice(0, 50).join('\n');
+  
+  const prompt = USER_TEMPLATE(lines.join('\n'), contextSummary);
 
   // Define Response Schema
   const responseSchema = {
@@ -106,7 +115,7 @@ export const analyzeTasks = async (lines: string[], modelName: string): Promise<
 
   try {
     const response = await client.models.generateContent({
-      model: modelName || "gemini-2.0-flash", // Default fallback if empty
+      model: modelName || "gemini-2.0-flash",
       contents: prompt,
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
@@ -118,23 +127,19 @@ export const analyzeTasks = async (lines: string[], modelName: string): Promise<
 
     let parsedResponse = response.parsed as PlanAIRaw | null;
     
-    // Fallback: If parsed is missing (sometimes happens with specific SDK versions or model responses),
-    // try to manually parse the text.
     if (!parsedResponse && response.text) {
         try {
             const rawText = response.text;
-            // Remove code blocks if present (though responseMimeType usually prevents this, it's safer)
             const jsonText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
             parsedResponse = JSON.parse(jsonText) as PlanAIRaw;
         } catch (e) {
             console.error("Manual parsing failed:", e);
-            console.log("Raw Response Text:", response.text);
         }
     }
 
     if (!parsedResponse?.업무상세) {
        console.error("Invalid Response Structure:", parsedResponse);
-       throw new Error("Failed to parse response structure. Please try again or check the API key/Model.");
+       throw new Error("Failed to parse response structure.");
     }
 
     return parsedResponse.업무상세.map(mapRawToDomain);

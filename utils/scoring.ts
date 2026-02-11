@@ -5,57 +5,53 @@ const isBlockerCategory = (t: TaskAI): boolean => {
 };
 
 export const scoreTask = (t: TaskAI, meta?: TaskMeta): number => {
-  let s = 50;
+  // Base Score
+  let base = 50;
 
-  // Status scoring
-  if (t.status === "바로 실행 가능") {
-    s += 25;
-  } else if (["자료 부족", "선행 작업 필요", "의사결정 필요"].includes(t.status)) {
-    s += 10;
-  } else if (t.status === "외부 응답 대기") {
-    s -= 20;
-  } else if (t.status === "잠시 보류해도 무방") {
-    s -= 35;
+  // 1. Status Base Score
+  if (t.status === "바로 실행 가능") base = 70;
+  else if (["자료 부족", "선행 작업 필요", "의사결정 필요"].includes(t.status)) base = 40;
+  else if (t.status === "외부 응답 대기") base = 30; // Waiting is important but not actionable right now
+  else if (t.status === "잠시 보류해도 무방") base = 10;
+
+  let score = base;
+
+  // 2. Category Bonus (Strategic Importance)
+  if (isBlockerCategory(t)) score += 10;
+
+  // 3. Multipliers (Urgency & Bottleneck)
+  let multiplier = 1.0;
+
+  if (meta?.due) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const dueDate = new Date(meta.due);
+    const diffTime = dueDate.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    if (diffDays < 0) multiplier *= 2.0; // Overdue: Critical
+    else if (diffDays <= 1) multiplier *= 1.5; // D-1: Urgent
+    else if (diffDays <= 3) multiplier *= 1.2; // D-3: High
   }
 
-  // Blocker category bonus
-  if (isBlockerCategory(t)) {
-    s += 10;
+  // Quick Win Bonus (Actionability)
+  if (t.nextActions.length === 1 && !t.isEstimated) {
+    score += 5;
   }
 
-  // Quick win
-  if (t.nextActions.length === 1) {
-    s += 6;
+  // 4. Decay (Freshness)
+  // Reduce score by 1 for every 2 days passed since creation
+  if (t.createdAt) {
+    const daysSinceCreation = Math.floor((Date.now() - t.createdAt) / (1000 * 60 * 60 * 24));
+    const decay = Math.floor(daysSinceCreation / 2);
+    score -= Math.min(decay, 20); // Max decay 20 points
   }
 
-  // Estimated penalty
-  if (t.isEstimated) {
-    s -= 6;
-  }
+  // Apply Multiplier
+  score *= multiplier;
 
-  // Meta data adjustments
-  if (meta) {
-    if (meta.due) {
-      const today = new Date();
-      // Reset time for accurate date comparison
-      today.setHours(0, 0, 0, 0);
-      const dueDate = new Date(meta.due);
-      
-      const diffTime = dueDate.getTime() - today.getTime();
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-      if (diffDays <= 0) s += 10;
-      else if (diffDays <= 2) s += 6;
-      else if (diffDays <= 7) s += 3;
-    }
-
-    if (meta.estMin) {
-      if (meta.estMin >= 90) s -= 5;
-      else if (meta.estMin <= 30) s += 3;
-    }
-  }
-
-  return Math.max(0, Math.min(100, s));
+  // 5. Final Constraints
+  return Math.max(0, Math.min(100, Math.round(score)));
 };
 
 export const buildViews = (tasks: TaskAI[], doneIds: Set<string>, metaMap: Record<string, TaskMeta>): ViewState => {
@@ -66,33 +62,39 @@ export const buildViews = (tasks: TaskAI[], doneIds: Set<string>, metaMap: Recor
     task: t
   })).sort((a, b) => b.score - a.score);
 
-  // Immediate TOP 5
-  let immediate = enriched.filter(x => x.task.status === "바로 실행 가능");
-  if (immediate.length < 5) {
-    immediate = enriched; // Fallback if not enough
-  }
-  const immediateTop5 = immediate.slice(0, 5);
-
-  // Blocker TOP 5
-  let blockers = enriched.filter(x => 
-    isBlockerCategory(x.task) && x.task.status !== "외부 응답 대기"
+  // Categorize for Kanban Columns
+  
+  // 1. Focus (Ready & High Score)
+  const focus = enriched.filter(x => 
+    x.task.status === "바로 실행 가능" && x.score >= 60
   );
-  if (blockers.length < 5) {
-    // Fallback to specific statuses
-    blockers = enriched.filter(x => 
-      ["자료 부족", "선행 작업 필요", "의사결정 필요"].includes(x.task.status)
-    );
-  }
-  const blockerTop5 = blockers.slice(0, 5);
 
-  // Waiting
-  const waiting = enriched.filter(x => x.task.status === "외부 응답 대기");
+  // 2. Waiting (External blockers)
+  const waiting = enriched.filter(x => 
+    x.task.status === "외부 응답 대기"
+  );
+
+  // 3. Blocked (Internal blockers / Decisions / Missing Data)
+  const blocked = enriched.filter(x => 
+    ["자료 부족", "의사결정 필요", "선행 작업 필요"].includes(x.task.status)
+  );
+
+  // 4. Backlog (Low priority ready tasks or deferred)
+  // Everything else that is not in the above categories
+  const processedIds = new Set([
+    ...focus.map(x => x.task.id),
+    ...waiting.map(x => x.task.id),
+    ...blocked.map(x => x.task.id)
+  ]);
+  
+  const backlog = enriched.filter(x => !processedIds.has(x.task.id));
 
   return {
     enriched,
-    immediateTop5,
-    blockerTop5,
-    waiting
+    focus,
+    waiting,
+    blocked,
+    backlog
   };
 };
 

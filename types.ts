@@ -64,6 +64,12 @@ export interface TaskAI {
   requiredDataCheck: string[];
   blogStructure: string[];
   placeCheck: string[];
+  createdAt: number; // timestamp
+}
+
+export interface TaskLink {
+  title: string;
+  url: string;
 }
 
 export interface TaskMeta {
@@ -71,7 +77,9 @@ export interface TaskMeta {
   channel?: Channel;
   estMin?: number;
   dependsOn?: string;
+  dependencyIds?: string[]; // IDs of tasks that block this task
   note?: string;
+  links?: TaskLink[];
 }
 
 export interface AppState {
@@ -82,7 +90,8 @@ export interface AppState {
 
 export interface ViewState {
   enriched: Array<{ score: number; task: TaskAI }>;
-  immediateTop5: Array<{ score: number; task: TaskAI }>;
-  blockerTop5: Array<{ score: number; task: TaskAI }>;
-  waiting: Array<{ score: number; task: TaskAI }>;
+  focus: Array<{ score: number; task: TaskAI }>; // High priority ready tasks
+  backlog: Array<{ score: number; task: TaskAI }>; // Not ready / Low priority
+  waiting: Array<{ score: number; task: TaskAI }>; // External blockers
+  blocked: Array<{ score: number; task: TaskAI }>; // Internal blockers
 }

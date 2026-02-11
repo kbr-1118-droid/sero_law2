@@ -35,6 +35,7 @@ export const StructuredInput: React.FC<StructuredInputProps> = ({ onAddTask }) =
       requiredDataCheck: [],
       blogStructure: [],
       placeCheck: [],
+      createdAt: Date.now(),
     };
 
     const newMeta: TaskMeta = {

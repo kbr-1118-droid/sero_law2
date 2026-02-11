@@ -1,17 +1,15 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
-import { QuickInput } from './components/QuickInput';
-import { StructuredInput } from './components/StructuredInput';
 import { Dashboard } from './components/Dashboard';
+import { CopilotPanel } from './components/CopilotPanel';
 import { AppState, TaskAI, TaskMeta } from './types';
 import { buildViews } from './utils/scoring';
-import { LayoutDashboard, Zap, PenTool } from 'lucide-react';
 
-const STORAGE_KEY = 'marketing-ops-v2';
+const STORAGE_KEY = 'marketing-ops-v3';
+const MODEL_KEY = 'marketing-ops-model';
 
 const App: React.FC = () => {
   const [model, setModel] = useState("gemini-2.0-flash");
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'quick' | 'structured'>('dashboard');
   
   const [appState, setAppState] = useState<AppState>({
     tasks: [],
@@ -19,15 +17,21 @@ const App: React.FC = () => {
     meta: {},
   });
 
-  // Load initial state
+  // Load initial state & model
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
+    const savedData = localStorage.getItem(STORAGE_KEY);
+    const savedModel = localStorage.getItem(MODEL_KEY);
+    
+    if (savedData) {
       try {
-        setAppState(JSON.parse(saved));
+        setAppState(JSON.parse(savedData));
       } catch (e) {
         console.error("Failed to load local state", e);
       }
+    }
+
+    if (savedModel) {
+      setModel(savedModel);
     }
   }, []);
 
@@ -36,8 +40,14 @@ const App: React.FC = () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
   }, [appState]);
 
+  // Persist model
+  useEffect(() => {
+    localStorage.setItem(MODEL_KEY, model);
+  }, [model]);
+
   const handleAddTasks = (newTasks: TaskAI[]) => {
     setAppState(prev => {
+      // Name-based Deduplication (Basic)
       const existingNames = new Set(prev.tasks.map(t => t.taskName));
       const filtered = newTasks.filter(t => !existingNames.has(t.taskName));
       
@@ -52,7 +62,6 @@ const App: React.FC = () => {
         meta: newMeta
       };
     });
-    setActiveTab('dashboard');
   };
 
   const handleManualAdd = (task: TaskAI, meta: TaskMeta) => {
@@ -61,7 +70,17 @@ const App: React.FC = () => {
       tasks: [...prev.tasks, task],
       meta: { ...prev.meta, [task.id]: meta }
     }));
-    setActiveTab('dashboard');
+  };
+
+  const handleUpdateTask = (id: string, updates: { taskName?: string, status?: TaskAI['status'] }, metaUpdates: TaskMeta) => {
+    setAppState(prev => ({
+      ...prev,
+      tasks: prev.tasks.map(t => t.id === id ? { ...t, ...updates } : t),
+      meta: {
+        ...prev.meta,
+        [id]: { ...prev.meta[id], ...metaUpdates }
+      }
+    }));
   };
 
   const handleComplete = (id: string) => {
@@ -71,11 +90,18 @@ const App: React.FC = () => {
     }));
   };
 
+  const handleUndoComplete = (id: string) => {
+    setAppState(prev => ({
+      ...prev,
+      doneIds: prev.doneIds.filter(doneId => doneId !== id)
+    }));
+  };
+
   const handleSaveFile = () => {
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(appState, null, 2));
     const downloadAnchorNode = document.createElement('a');
     downloadAnchorNode.setAttribute("href", dataStr);
-    downloadAnchorNode.setAttribute("download", `ops_backup_${new Date().toISOString().slice(0,10)}.json`);
+    downloadAnchorNode.setAttribute("download", `ops_v3_backup_${new Date().toISOString().slice(0,10)}.json`);
     document.body.appendChild(downloadAnchorNode);
     downloadAnchorNode.click();
     downloadAnchorNode.remove();
@@ -93,8 +119,12 @@ const App: React.FC = () => {
     return buildViews(appState.tasks, new Set(appState.doneIds), appState.meta);
   }, [appState]);
 
+  // Context Tasks for AI (Active tasks)
+  const contextTasks = useMemo(() => appState.tasks.filter(t => !appState.doneIds.includes(t.id)), [appState.tasks, appState.doneIds]);
+
   return (
-    <div className="flex h-screen bg-slate-50 font-sans text-slate-900">
+    <div className="flex h-screen bg-slate-100 font-sans text-slate-900 overflow-hidden">
+      {/* 1. Sidebar (Settings & Data) */}
       <Sidebar 
         model={model} 
         setModel={setModel} 
@@ -103,59 +133,24 @@ const App: React.FC = () => {
         onReset={handleReset}
       />
       
-      <main className="flex-1 flex flex-col h-full min-w-0">
-        {/* Top Navigation */}
-        <div className="flex-none bg-white border-b border-slate-200 px-6">
-            <div className="flex gap-6">
-                <button
-                    onClick={() => setActiveTab('dashboard')}
-                    className={`py-4 px-2 border-b-2 text-sm font-medium flex items-center gap-2 transition-colors ${activeTab === 'dashboard' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-                >
-                    <LayoutDashboard className="w-4 h-4" /> 대시보드
-                </button>
-                <button
-                    onClick={() => setActiveTab('quick')}
-                    className={`py-4 px-2 border-b-2 text-sm font-medium flex items-center gap-2 transition-colors ${activeTab === 'quick' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-                >
-                    <Zap className="w-4 h-4" /> 빠른 입력 (AI)
-                </button>
-                <button
-                    onClick={() => setActiveTab('structured')}
-                    className={`py-4 px-2 border-b-2 text-sm font-medium flex items-center gap-2 transition-colors ${activeTab === 'structured' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-                >
-                    <PenTool className="w-4 h-4" /> 구조 입력 (수기)
-                </button>
-            </div>
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-hidden relative">
-            {activeTab === 'dashboard' && (
-                <Dashboard 
-                    appState={appState} 
-                    viewState={viewState} 
-                    onComplete={handleComplete} 
-                />
-            )}
-            
-            {activeTab === 'quick' && (
-                <div className="p-8 max-w-4xl mx-auto overflow-y-auto h-full">
-                    <div className="bg-white rounded-xl p-8 shadow-sm border border-slate-200">
-                        <QuickInput model={model} onAddTasks={handleAddTasks} />
-                    </div>
-                </div>
-            )}
-
-            {activeTab === 'structured' && (
-                <div className="p-8 max-w-4xl mx-auto overflow-y-auto h-full">
-                    <div className="bg-white rounded-xl p-8 shadow-sm border border-slate-200">
-                        <h2 className="text-lg font-bold text-slate-800 mb-6">개별 업무 추가</h2>
-                        <StructuredInput onAddTask={handleManualAdd} />
-                    </div>
-                </div>
-            )}
-        </div>
+      {/* 2. Main Content (Kanban & Focus) */}
+      <main className="flex-1 flex flex-col h-full min-w-0 shadow-xl z-0">
+        <Dashboard 
+            appState={appState} 
+            viewState={viewState} 
+            onComplete={handleComplete} 
+            onUndo={handleUndoComplete}
+            onUpdate={handleUpdateTask}
+        />
       </main>
+
+      {/* 3. Copilot Panel (Input & AI) */}
+      <CopilotPanel 
+          model={model}
+          existingTasks={contextTasks}
+          onAddTasks={handleAddTasks}
+          onAddManualTask={handleManualAdd}
+      />
     </div>
   );
 };
