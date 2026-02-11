@@ -1,0 +1,5 @@
+{
+  "name": "Marketing Ops AI",
+  "description": "A marketing task operation tool powered by Gemini to organize, prioritize, and track initial setup tasks like blogs, places, and contracts.",
+  "requestFramePermissions": []
+}
